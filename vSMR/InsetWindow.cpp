@@ -453,7 +453,7 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 
 		int TagWidth = 0, TagHeight = 0;
 		RectF mesureRect;
-		gdi->MeasureString(L" ", wcslen(L" "), radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &Gdiplus::StringFormat(), &mesureRect);
+		gdi->MeasureString(L" ", wcslen(L" "), radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &mesureRect);
 		int blankWidth = (int)mesureRect.GetRight();
 
 		mesureRect = RectF(0, 0, 0, 0);

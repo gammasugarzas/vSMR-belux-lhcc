@@ -111,6 +111,9 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		TagAngles[id] = 360 - 45.0f;
 	}
 
+	bool is_heavy = (fp.GetFlightPlanData().GetAircraftWtc() == 'H') ? true : false;
+
+
 	// Would the start of a right-aligned tag be to the left of the tag start?
 	const bool right_align = false; // fmod(abs(TagAngles[id] + 90), 360) > 180;
 
@@ -190,6 +193,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	TagClickableMap[TagReplacingMap["groundstatus"]] = TAG_CITEM_GROUNDSTATUS;
 	TagClickableMap[TagReplacingMap["uk_stand"]] = TAG_CITEM_UKSTAND;
 	TagClickableMap[TagReplacingMap["scratch_pad"]] = TAG_CITEM_GATE;
+	TagClickableMap[TagReplacingMap["eobt"]] = TAG_CITEM_NO;
 	TagClickableMap["SSR/FPL"] = TAG_CITEM_CALLSIGN; // Not really, but close enough ya know
 
 	//
@@ -246,7 +250,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	if (is_assr_err && show_err_lines)
 	{
 		auto val = vector<string>();
-		val.emplace_back("SSR/FPL");
+		val.emplace_back("SSR_CONFL");
 		LabelLines.insert(LabelLines.begin(), std::move(val));
 	}
 
@@ -297,13 +301,13 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 			wstring wstr = wstring(element.begin(), element.end());
 			Gdiplus::Font* font = customFonts[currentFontSize];
-			if ((element_was == "SSR/FPL" || i == 0 || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
+			if ((element_was == "SSR_CONFL" || i == 0  || (is_assr_err && show_err_lines && i == 1) || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
 			{
 				font = customFonts[currentFontSize + 10];
 			}
 
 			graphics.MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
-				font, PointF(0, 0), &Gdiplus::StringFormat(), &mesureRect);
+				font, PointF(0, 0), &string_format, &mesureRect);
 
 			LineWidth += mesureRect.Width;
 		}
@@ -344,7 +348,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 			wstring wstr = wstring(element.begin(), element.end());
 			Gdiplus::Font* font = customFonts[currentFontSize];
-			if ((element_was == "SSR/FPL" || i == 0 || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
+			if ((element_was == "SSR_CONFL" || i == 0 || (is_assr_err && show_err_lines && i == 1) || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
 			{
 				font = customFonts[currentFontSize + 10];
 			}
@@ -386,7 +390,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 				                        : tag_start.x + TempTagWidth;
 
 			// Adjust background to RIMCAS color, if this row is ALERT
-			const Color BackgroundColor = element == "ALERT"
+			Color BackgroundColor = element == "ALERT"
 				                              ? RimcasInstance->GetAircraftColor(
 					                              rt.GetCallsign(), TagBackgroundColor, TagBackgroundColor,
 					                              CurrentConfig->getConfigColor(
@@ -398,6 +402,22 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 							                              "background_color_stage_two"]
 					                              ))
 				                              : TagBackgroundColor;
+
+			if (is_heavy && (element_was == "wake"))
+			{
+				BackgroundColor = Color(247, 149, 211);
+			}
+
+			if (element_was == "SSR_CONFL")
+			{
+				BackgroundColor = Color(242, 218, 24);
+			}
+
+			if (element_was == "eobt")
+			{
+				BackgroundColor = Color(0, 105, 165);
+			}
+
 			const SolidBrush backgroundBrush(BackgroundColor);
 
 			RectF layoutRect(draw_start,
@@ -405,6 +425,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 				mesureRect.Width,
 				mesureRect.Height);
 			// If we're not looking at the last element
+
 
 			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
 			{
@@ -420,8 +441,17 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			}
 
 
-			graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &Gdiplus::StringFormat(),
-			                    color);
+			if (element_was == "SSR_CONFL")
+			{
+				const SolidBrush blackStringBrush(Color(0, 0, 0));
+				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &string_format,
+					&blackStringBrush);
+			}
+			else
+			{
+				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &string_format,
+					color);
+			}
 
 			CRect ItemRect(floor(layoutRect.GetLeft()), floor(layoutRect.GetTop()),
 			               floor(layoutRect.GetRight()),
@@ -439,30 +469,6 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			}
 
 			TempTagHeight = max(TempTagHeight, static_cast<int>(mesureRect.GetBottom()));
-
-			// If we're not looking at the last element
-			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
-			{
-			}
-			else if (!right_align)
-			{
-				// Left aligned and last element
-				PointF line_top_right(floor(layoutRect.GetRight()),
-				                      floor(layoutRect.GetTop()));
-				PointF line_bottom_right(floor(layoutRect.GetRight()),
-				                         floor(layoutRect.GetBottom()));
-				border_points.push_back(line_top_right);
-				border_points.push_back(line_bottom_right);
-			}
-			if (right_align && el == 0)
-			{
-				PointF line_top_left(floor(layoutRect.GetLeft()),
-				                     floor(layoutRect.GetTop()));
-				PointF line_bottom_left(floor(layoutRect.GetLeft()),
-				                        floor(layoutRect.GetBottom()));
-				border_points.push_back(line_top_left);
-				border_points.push_back(line_bottom_left);
-			}
 		}
 
 
@@ -472,37 +478,10 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 	TagWidth = MaxTagWidth;
 
-	border_points.push_back(PointF{border_points.front().X, border_points.back().Y});
 
 	CRect TagBackgroundRect(tag_start.x, tag_start.y, tag_start.x + TagWidth,
 	                        tag_start.y + TagHeight);
 
-
-	// Drawing the border
-	const bool is_rimcas_stage_two = RimcasInstance->getAlert(callsign) == CRimcas::StageTwo;
-	if ((is_asel || is_assr_err || is_rimcas_stage_two) && ColorTagType != TagTypes::Airborne)
-	{
-		Color border_color = is_assr_err
-			                     ? is_asel
-				                       ? Color::Orange
-				                       : Color::Red
-			                     : is_asel
-			                     ? Color::Yellow
-			                     : Color::AlphaMask;
-
-		if (is_rimcas_stage_two)
-		{
-			border_color = Color(255, 0, 255);
-		}
-
-		// Width of border. 4 is realistic-ish. I've taken that into account above. Sorry for magic numbers
-		// We should expand the polygon
-		const auto grown_points = UIHelper::grow_border(border_points, border_growth, right_align);
-
-		Gdiplus::Pen pen(ColorManager->get_corrected_color("label", border_color), border_width);
-		pen.SetAlignment(Gdiplus::PenAlignmentInset);
-		graphics.DrawPolygon(&pen, grown_points.data(), grown_points.size());
-	}
 
 	const auto angle_rad = DegToRad(TagAngles[id]);
 
@@ -2228,7 +2207,11 @@ map<string, string> CSMRRadar::GenerateTagData(CRadarTarget rt, CFlightPlan fp, 
 		sctype = sqerror;
 
 	// ----- Groundspeed -------
-	string speed = std::to_string(rt.GetPosition().GetReportedGS());
+	std::stringstream ss;
+	ss << std::setw(3) << std::setfill('0') << rt.GetPosition().GetReportedGS();
+	string speed = ss.str();
+
+	//string speed = std::to_string(rt.GetPosition().GetReportedGS());
 
 	// ----- Departure runway -------
 	string deprwy = fp.GetFlightPlanData().GetDepartureRwy();
@@ -2335,6 +2318,15 @@ map<string, string> CSMRRadar::GenerateTagData(CRadarTarget rt, CFlightPlan fp, 
 
 	string scratch_pad = fp.GetControllerAssignedData().GetScratchPadString();
 
+
+	// ----- EOBT -------
+	string eobt = "0000";
+	if (isAcCorrelated)
+	{
+		eobt = fp.GetFlightPlanData().GetEstimatedDepartureTime();
+	}
+
+
 	// ----- GSTAT -------
 	string gstat = "STS";
 	if (fp.IsValid() && isAcCorrelated)
@@ -2406,6 +2398,7 @@ map<string, string> CSMRRadar::GenerateTagData(CRadarTarget rt, CFlightPlan fp, 
 	TagReplacingMap["dest"] = dest;
 	TagReplacingMap["groundstatus"] = gstat;
 	TagReplacingMap["scratch_pad"] = scratch_pad;
+	TagReplacingMap["eobt"] = eobt;
 
 	return TagReplacingMap;
 }
@@ -2669,7 +2662,10 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 
 		POINT acPosPix = ConvertCoordFromPositionToPixel(RtPos.GetPosition());
 
-		draw_after_glow(rt, graphics);
+		if (Afterglow)
+		{
+			draw_after_glow(rt, graphics);
+		}
 
 
 		if (CurrentConfig->getActiveProfile()["targets"]["show_primary_target"].GetBool())
@@ -2704,13 +2700,13 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 		// Draw target symbols
 		const Color color = ColorManager->get_corrected_color("target", Gdiplus::Color::White);
 		const Pen symbol_pen(color, symbol_line_thickness);
-		int offset = half_size;
+		int quarter_size = half_size / 2;
 
 		const auto acPosX = static_cast<int>(acPosPix.x);
 		const auto acPosY = static_cast<int>(acPosPix.y);
 
-		graphics.DrawLine(&symbol_pen, acPosX, acPosY - offset, acPosX, acPosY + offset);
-		graphics.DrawLine(&symbol_pen, acPosX - offset, acPosY, acPosX + offset, acPosY);
+		graphics.DrawLine(&symbol_pen, acPosX, acPosY - quarter_size, acPosX, acPosY + quarter_size);
+		graphics.DrawLine(&symbol_pen, acPosX - quarter_size, acPosY, acPosX + quarter_size, acPosY);
 
 		if (mouseWithin(
 			{acPosPix.x - half_size, acPosPix.y - half_size, acPosPix.x + half_size, acPosPix.y + half_size}))
@@ -2775,20 +2771,11 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 
 		if (RtPos.GetTransponderC())
 		{
-			graphics.DrawEllipse(&symbol_pen, acPosPix.x - (size / 2), acPosPix.y - (size / 2), size, size);
+			graphics.DrawEllipse(&symbol_pen, acPosPix.x - quarter_size, acPosPix.y - quarter_size, half_size, half_size);
 		}
 		else // We still want the primary return square, but we simulate only getting a good lock if its moving
 		{
-			graphics.DrawRectangle(&symbol_pen, acPosPix.x - half_size, acPosPix.y - half_size, size, size);
-		}
-
-		if (TargetIsAsel)
-		{
-			const Color asel_color = ColorManager->get_corrected_color("target", Gdiplus::Color::Yellow);
-			const Pen asel_pen(asel_color, symbol_line_thickness);
-			const int asel_size = size + 2 * symbol_line_thickness + 2; // 2px spacing, plus compensation for thickness
-			graphics.DrawEllipse(&asel_pen, acPosPix.x - (asel_size / 2), acPosPix.y - (asel_size / 2), asel_size,
-			                     asel_size);
+			graphics.DrawRectangle(&symbol_pen, acPosPix.x - quarter_size, acPosPix.y - quarter_size, half_size, half_size);
 		}
 	}
 
@@ -3287,15 +3274,6 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 	                }, false, "Filter menu");
 
 	offset += dc.GetTextExtent("Filters").cx + 10;
-	dc.TextOutA(ToolBarAreaTop.left + offset, ToolBarAreaTop.top + 4, "Belux");
-	AddScreenObject(RIMCAS_MENU, "BeluxMenu", {
-		                ToolBarAreaTop.left + offset, ToolBarAreaTop.top + 4,
-		                ToolBarAreaTop.left + offset + dc.GetTextExtent("Belux").cx,
-		                ToolBarAreaTop.top + 4 + +dc.GetTextExtent("Belux").cy
-	                }, false, "Belux menu");
-
-
-	offset += dc.GetTextExtent("Belux").cx + 10;
 	dc.TextOutA(ToolBarAreaTop.left + offset, ToolBarAreaTop.top + 4, "/");
 	CRect barDistanceRect = {
 		ToolBarAreaTop.left + offset - 2, ToolBarAreaTop.top + 4,
