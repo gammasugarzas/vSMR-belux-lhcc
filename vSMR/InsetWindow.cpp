@@ -453,6 +453,8 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 
 		int TagWidth = 0, TagHeight = 0;
 		RectF mesureRect;
+		gdi->MeasureString(L" ", wcslen(L" "), radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &Gdiplus::StringFormat(), &mesureRect);
+		int blankWidth = (int)mesureRect.GetRight();
 
 		mesureRect = RectF(0, 0, 0, 0);
 		gdi->MeasureString(L"AZERTYUIOPQSDFGHJKLMWXCVBN", wcslen(L"AZERTYUIOPQSDFGHJKLMWXCVBN"),
@@ -492,6 +494,9 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 					radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &mesureRect);
 
 				TempTagWidth += (int)mesureRect.GetRight();
+
+				if (j != line.Size() - 1)
+					TempTagWidth += (int)blankWidth;
 			}
 
 			TagWidth = max(TagWidth, TempTagWidth);
@@ -576,6 +581,7 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 					radar_screen->AddScreenObject(TagClickableMap[element], rt.GetCallsign(), ItemRect, false, radar_screen->GetBottomLine(rt.GetCallsign()).c_str());
 
 					widthOffset += (int)mRect.GetRight();
+					widthOffset += blankWidth;
 				}
 
 				heightOffset += oneLineHeight;
