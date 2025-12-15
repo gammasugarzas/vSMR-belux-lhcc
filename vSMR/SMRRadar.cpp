@@ -111,7 +111,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	}
 
 	// Would the start of a right-aligned tag be to the left of the tag start?
-	const bool right_align = fmod(abs(TagAngles[id] + 90), 360) > 180;
+	const bool right_align = false; // fmod(abs(TagAngles[id] + 90), 360) > 180;
 
 	// Set up an offscreen buffer to draw to
 	// that way, we can measure the tag while drawing and position it _perfectly_.
@@ -264,6 +264,49 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		static_cast<Gdiplus::REAL>(tag_start.x),
 		static_cast<Gdiplus::REAL>(tag_start.y)
 	});
+
+	int MaxTagWidth = 0;
+
+	for (unsigned int i = 0; i < LabelLines.size(); i++)
+	{
+		const auto line = LabelLines[i];
+		vector<string> lineStringArray;
+		int LineWidth = 0;
+
+		for (size_t el = right_align ? line.size() : 0; right_align ? el-- > 0 : el < line.size();
+			right_align ? 0 : ++el)
+		{
+			RectF mesureRect = RectF(0, 0, 0, 0);
+			const string element_was = line[el];
+			string element = line[el];
+
+			for (auto& kv : TagReplacingMap)
+			{
+				replaceAll(element, kv.first, kv.second);
+			}
+
+			lineStringArray.push_back(element);
+
+			if (element == "" && line.size() == 1)
+			{
+				continue;
+			}
+
+			wstring wstr = wstring(element.begin(), element.end());
+			Gdiplus::Font* font = customFonts[currentFontSize];
+			if ((element_was == "SSR/FPL" || i == 0 || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
+			{
+				font = customFonts[currentFontSize + 10];
+			}
+
+			graphics.MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
+				font, PointF(0, 0), &Gdiplus::StringFormat(), &mesureRect);
+
+			LineWidth += mesureRect.Width;
+		}
+		MaxTagWidth = max(MaxTagWidth, LineWidth);
+	}
+
 	for (unsigned int i = 0; i < LabelLines.size(); i++)
 	{
 		const auto line = LabelLines[i];
@@ -298,7 +341,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 			wstring wstr = wstring(element.begin(), element.end());
 			Gdiplus::Font* font = customFonts[currentFontSize];
-			if ((element_was == "callsign" || element_was == "SSR/FPL" || i == 0 || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
+			if ((element_was == "SSR/FPL" || i == 0 || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
 			{
 				font = customFonts[currentFontSize + 10];
 			}
@@ -336,7 +379,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 			// Drawing!
 			const auto draw_start = right_align
-				                        ? tag_start.x - TempTagWidth - floor(mesureRect.Width)
+				                        ? tag_start.x - TempTagWidth - floor(MaxTagWidth)
 				                        : tag_start.x + TempTagWidth;
 
 			// Adjust background to RIMCAS color, if this row is ALERT
@@ -353,14 +396,27 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 					                              ))
 				                              : TagBackgroundColor;
 			const SolidBrush backgroundBrush(BackgroundColor);
-			graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
-			                       static_cast<int>(mesureRect.Width),
-			                       static_cast<int>(mesureRect.Height));
 
-			const RectF layoutRect(draw_start,
-			                       static_cast<Gdiplus::REAL>(tag_start.y + TagHeight),
-			                       mesureRect.Width,
-			                       mesureRect.Height);
+			RectF layoutRect(draw_start,
+				static_cast<Gdiplus::REAL>(tag_start.y + TagHeight),
+				mesureRect.Width,
+				mesureRect.Height);
+			// If we're not looking at the last element
+
+			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
+			{
+				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
+					static_cast<int>(mesureRect.Width),
+					static_cast<int>(mesureRect.Height));
+			}
+			else if (!right_align)
+			{
+				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
+					static_cast<int>(MaxTagWidth- static_cast<long>(draw_start)),
+					static_cast<int>(mesureRect.Height));
+			}
+
+
 			graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &Gdiplus::StringFormat(),
 			                    color);
 
@@ -369,7 +425,16 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			               floor(layoutRect.GetBottom()));
 			interactables.push_back({TagClickableMap[element], ItemRect});
 
-			TempTagWidth += static_cast<int>(mesureRect.GetRight());
+			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
+			{
+				TempTagWidth += static_cast<int>(mesureRect.GetRight());
+			}
+			else if (!right_align)
+			{
+				layoutRect.Width = MaxTagWidth - static_cast<long>(draw_start);
+				TempTagWidth += MaxTagWidth - mesureRect.GetLeft();
+			}
+
 			TempTagHeight = max(TempTagHeight, static_cast<int>(mesureRect.GetBottom()));
 
 			// If we're not looking at the last element
@@ -398,9 +463,11 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		}
 
 
-		TagWidth = max(TagWidth, TempTagWidth);
+		TagWidth =  max(TagWidth, TempTagWidth);
 		TagHeight += TempTagHeight;
 	}
+
+	TagWidth = MaxTagWidth;
 
 	border_points.push_back(PointF{border_points.front().X, border_points.back().Y});
 
@@ -2619,21 +2686,13 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 		// Draw target symbols
 		const Color color = ColorManager->get_corrected_color("target", Gdiplus::Color::White);
 		const Pen symbol_pen(color, symbol_line_thickness);
+		int offset = half_size;
+		graphics.DrawLine(&symbol_pen, acPosPix.x, acPosPix.y - offset, acPosPix.x, acPosPix.y + offset);
+		graphics.DrawLine(&symbol_pen, acPosPix.x - offset, acPosPix.y, acPosPix.x + offset, acPosPix.y);
+
 		if (mouseWithin(
 			{acPosPix.x - half_size, acPosPix.y - half_size, acPosPix.x + half_size, acPosPix.y + half_size}))
 		{
-			graphics.DrawLine(&symbol_pen, acPosPix.x, acPosPix.y - 8, acPosPix.x - 6, acPosPix.y - 12);
-			graphics.DrawLine(&symbol_pen, acPosPix.x, acPosPix.y - 8, acPosPix.x + 6, acPosPix.y - 12);
-
-			graphics.DrawLine(&symbol_pen, acPosPix.x, acPosPix.y + 8, acPosPix.x - 6, acPosPix.y + 12);
-			graphics.DrawLine(&symbol_pen, acPosPix.x, acPosPix.y + 8, acPosPix.x + 6, acPosPix.y + 12);
-
-			graphics.DrawLine(&symbol_pen, acPosPix.x - 8, acPosPix.y, acPosPix.x - 12, acPosPix.y - 6);
-			graphics.DrawLine(&symbol_pen, acPosPix.x - 8, acPosPix.y, acPosPix.x - 12, acPosPix.y + 6);
-
-			graphics.DrawLine(&symbol_pen, acPosPix.x + 8, acPosPix.y, acPosPix.x + 12, acPosPix.y - 6);
-			graphics.DrawLine(&symbol_pen, acPosPix.x + 8, acPosPix.y, acPosPix.x + 12, acPosPix.y + 6);
-
 			/*
 			Stef, why are we getting interaction straight from the Windows APIS?
 			That's BS, this method is only called like once a second?
