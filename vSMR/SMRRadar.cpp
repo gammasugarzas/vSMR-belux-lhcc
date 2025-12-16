@@ -114,18 +114,13 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	bool is_heavy = (fp.GetFlightPlanData().GetAircraftWtc() == 'H') ? true : false;
 
 
-	// Would the start of a right-aligned tag be to the left of the tag start?
-	const bool right_align = false; // fmod(abs(TagAngles[id] + 90), 360) > 180;
-
 	// Set up an offscreen buffer to draw to
 	// that way, we can measure the tag while drawing and position it _perfectly_.
 	Bitmap mem_buffer(mem_buffer_size, mem_buffer_size);
 	Graphics graphics(&mem_buffer);
 
 	// We can't just share the start, otherwise we draw out of buffer
-	const POINT tag_start = right_align
-		                        ? POINT{mem_buffer_size - border_growth, border_growth}
-		                        : POINT{border_growth, border_growth};
+	const POINT tag_start = POINT{border_growth, border_growth};
 
 	TagTypes TagType = TagTypes::Departure;
 	TagTypes ColorTagType = TagTypes::Departure;
@@ -193,7 +188,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	TagClickableMap[TagReplacingMap["groundstatus"]] = TAG_CITEM_GROUNDSTATUS;
 	TagClickableMap[TagReplacingMap["uk_stand"]] = TAG_CITEM_UKSTAND;
 	TagClickableMap[TagReplacingMap["scratch_pad"]] = TAG_CITEM_GATE;
-	TagClickableMap[TagReplacingMap["eobt"]] = TAG_CITEM_NO;
+	TagClickableMap[TagReplacingMap["eobt"]] = TAG_CITEM_EOBT;
 	TagClickableMap["SSR/FPL"] = TAG_CITEM_CALLSIGN; // Not really, but close enough ya know
 
 	//
@@ -280,8 +275,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		vector<string> lineStringArray;
 		int LineWidth = 0;
 
-		for (size_t el = right_align ? line.size() : 0; right_align ? el-- > 0 : el < line.size();
-			right_align ? 0 : ++el)
+		for (size_t el = 0; el < line.size(); ++el)
 		{
 			RectF mesureRect = RectF(0, 0, 0, 0);
 			const string element_was = line[el];
@@ -327,8 +321,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		 * If we're left aligning, iterate forwards.
 		 * if right aligning, we iterate in the inverse order. Okay? Lovely
 		 */
-		for (size_t el = right_align ? line.size() : 0; right_align ? el-- > 0 : el < line.size();
-		     right_align ? 0 : ++el)
+		for (size_t el = 0; el < line.size(); ++el)
 		{
 			RectF mesureRect = RectF(0, 0, 0, 0);
 			const string element_was = line[el];
@@ -385,9 +378,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			}
 
 			// Drawing!
-			const auto draw_start = right_align
-				                        ? tag_start.x - TempTagWidth - floor(MaxTagWidth)
-				                        : tag_start.x + TempTagWidth;
+			const auto draw_start = tag_start.x + TempTagWidth;
 
 			// Adjust background to RIMCAS color, if this row is ALERT
 			Color BackgroundColor = element == "ALERT"
@@ -427,13 +418,13 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			// If we're not looking at the last element
 
 
-			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
+			if (el != line.size() - 1)
 			{
 				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
 					static_cast<int>(mesureRect.Width),
 					static_cast<int>(mesureRect.Height));
 			}
-			else if (!right_align)
+			else
 			{
 				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
 					static_cast<int>(MaxTagWidth- static_cast<long>(draw_start)),
@@ -458,11 +449,11 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			               floor(layoutRect.GetBottom()));
 			interactables.push_back({TagClickableMap[element], ItemRect});
 
-			if ((right_align && el != 0) || (!right_align && el != line.size() - 1))
+			if (el != line.size() - 1)
 			{
 				TempTagWidth += static_cast<int>(mesureRect.GetRight());
 			}
-			else if (!right_align)
+			else
 			{
 				layoutRect.Width = MaxTagWidth - static_cast<long>(draw_start);
 				TempTagWidth += MaxTagWidth - mesureRect.GetLeft();
@@ -505,7 +496,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	TagCenter.y = long(acPosPix.y + float(length * sin(DegToRad(TagAngles[id]))));
 
 	const POINT tag_top_left = POINT{TagCenter.x - (TagWidth / 2), TagCenter.y - (TagHeight / 2)};
-	const INT x1 = right_align ? mem_buffer_size - TagWidth - 3 * border_growth : 0;
+	const INT x1 = 0;
 
 	// Drawing the symbol to tag line to actual screen, then blit the actual tag
 	const PointF acPosF = PointF(static_cast<Gdiplus::REAL>(acPosPix.x), static_cast<Gdiplus::REAL>(acPosPix.y));
@@ -790,12 +781,13 @@ void CSMRRadar::LoadCustomFont()
 	string font_name = CurrentConfig->getActiveProfile()["font"]["font_name"].GetString();
 	const wstring buffer = wstring(font_name.begin(), font_name.end());
 	const int titleOffset = CurrentConfig->getActiveProfile()["font"]["title_offset"].GetInt();
+	const boolean titleBold = CurrentConfig->getActiveProfile()["font"]["title_bold"].GetBool();
 
 
-	customFonts[1] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["one"].GetInt()), Gdiplus::FontStyleRegular,
-	                                   Gdiplus::UnitPixel);
-	customFonts[2] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["two"].GetInt()), Gdiplus::FontStyleRegular,
-	                                   Gdiplus::UnitPixel);
+	customFonts[1] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["one"].GetInt()),
+									   Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+	customFonts[2] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["two"].GetInt()), 
+									   Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 	customFonts[3] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["three"].GetInt()),
 	                                   Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 	customFonts[4] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["four"].GetInt()),
@@ -803,16 +795,32 @@ void CSMRRadar::LoadCustomFont()
 	customFonts[5] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["five"].GetInt()),
 	                                   Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 
-	customFonts[11] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["one"].GetInt() + titleOffset),
-	                                    Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-	customFonts[12] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["two"].GetInt() + titleOffset),
-	                                    Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-	customFonts[13] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["three"].GetInt() + titleOffset),
-	                                    Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-	customFonts[14] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["four"].GetInt() + titleOffset),
-	                                    Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-	customFonts[15] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["five"].GetInt() + titleOffset),
-	                                    Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+	if (titleBold)
+	{
+		customFonts[11] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["one"].GetInt() + titleOffset),
+			Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+		customFonts[12] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["two"].GetInt() + titleOffset),
+			Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+		customFonts[13] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["three"].GetInt() + titleOffset),
+			Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+		customFonts[14] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["four"].GetInt() + titleOffset),
+			Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+		customFonts[15] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["five"].GetInt() + titleOffset),
+			Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+	}
+	else
+	{
+		customFonts[11] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["one"].GetInt() + titleOffset),
+			Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+		customFonts[12] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["two"].GetInt() + titleOffset),
+			Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+		customFonts[13] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["three"].GetInt() + titleOffset),
+			Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+		customFonts[14] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["four"].GetInt() + titleOffset),
+			Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+		customFonts[15] = new Gdiplus::Font(buffer.c_str(), Gdiplus::REAL(FSizes["five"].GetInt() + titleOffset),
+			Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+	}
 }
 
 void CSMRRadar::LoadProfile(string profileName)
@@ -860,9 +868,6 @@ void CSMRRadar::OnAsrContentLoaded(bool Loaded)
 	if ((p_value = GetDataFromAsr("FontSize")) != NULL)
 		currentFontSize = atoi(p_value);
 
-	if ((p_value = GetDataFromAsr("Afterglow")) != NULL)
-		Afterglow = atoi(p_value) == 1 ? true : false;
-
 	if ((p_value = GetDataFromAsr("Symbol")) != NULL)
 		ColorManager->update_brightness("symbol", atoi(p_value));
 
@@ -891,13 +896,6 @@ void CSMRRadar::OnAsrContentLoaded(bool Loaded)
 	{
 		AlwaysVector = atoi(p_value) == 1;
 	}
-
-
-	if ((p_value = GetDataFromAsr("BeluxProMode")) != NULL)
-		belux_promode = (strcmp(p_value, "on") == 0);
-
-	if ((p_value = GetDataFromAsr("BeluxProModeEasy")) != NULL)
-		belux_promode_easy = (strcmp(p_value, "on") == 0);
 
 	if ((p_value = GetDataFromAsr("ShiftTopBar")) != NULL)
 		shift_top_bar = (strcmp(p_value, "on") == 0);
@@ -988,8 +986,6 @@ void CSMRRadar::OnAsrContentToBeSaved()
 
 	SaveDataToAsr("FontSize", "vSMR font size", std::to_string(currentFontSize).c_str());
 
-	SaveDataToAsr("Afterglow", "vSMR Afterglow enabled", std::to_string(int(Afterglow)).c_str());
-
 	SaveDataToAsr("Symbol", "vSMR Symbol brightness", std::to_string(ColorManager->get_brightness("symbol")).c_str());
 
 	SaveDataToAsr("AppTrailsDots", "vSMR APPR Trail Dots", std::to_string(Trail_App).c_str());
@@ -999,9 +995,6 @@ void CSMRRadar::OnAsrContentToBeSaved()
 	SaveDataToAsr("PredictedLine", "vSMR Predicted Track Lines", std::to_string(PredictedLength).c_str());
 	SaveDataToAsr("InsetSpeedVector", "vSMR Inset window Speed Vector Length", std::to_string(InsetSpeedVector).c_str());
 	SaveDataToAsr("AlwaysVector", "vSMR Always show speed vector", AlwaysVector ? "1" : "0");
-
-	SaveDataToAsr("BeluxProMode", "vSMR Belux pro mode", (belux_promode ? "on" : "off"));
-	SaveDataToAsr("BeluxProModeEasy", "vSMR Belux pro mode - easy version", (belux_promode_easy ? "on" : "off"));
 
 	SaveDataToAsr("ShiftTopBar", "Shift top menu bar downwards", shift_top_bar ? "on" : "off");
 
@@ -1105,7 +1098,7 @@ void CSMRRadar::OnMoveScreenObject(int ObjectType, const char* sObjectId, POINT 
 
 	if (ObjectType == DRAWING_TAG || ObjectType == TAG_CITEM_MANUALCORRELATE || ObjectType == TAG_CITEM_CALLSIGN ||
 		ObjectType == TAG_CITEM_FPBOX || ObjectType == TAG_CITEM_RWY || ObjectType == TAG_CITEM_SID || ObjectType ==
-		TAG_CITEM_GATE || ObjectType == TAG_CITEM_NO || ObjectType == TAG_CITEM_GROUNDSTATUS)
+		TAG_CITEM_GATE || ObjectType == TAG_CITEM_NO || ObjectType == TAG_CITEM_GROUNDSTATUS || ObjectType == TAG_CITEM_EOBT)
 	{
 		const CRadarTarget rt = GetPlugIn()->RadarTargetSelect(sObjectId);
 
@@ -1385,15 +1378,6 @@ void CSMRRadar::OnClickScreenObject(int ObjectType, const char* sObjectId, POINT
 			GetPlugIn()->AddPopupListElement("Close", "", RIMCAS_CLOSE, false, POPUP_ELEMENT_NO_CHECKBOX, false, true);
 		}
 
-		if (strcmp(sObjectId, "BeluxMenu") == 0)
-		{
-			Area.top = Area.top + 30;
-			Area.bottom = Area.bottom + 30;
-			GetPlugIn()->OpenPopupList(Area, "Belux Menu", 1);
-			GetPlugIn()->AddPopupListElement("Belux pro mode", "", RIMCAS_OPEN_LIST);
-		}
-
-
 		if (strcmp(sObjectId, "TargetMenu") == 0)
 		{
 			Area.top = Area.top + 30;
@@ -1401,7 +1385,6 @@ void CSMRRadar::OnClickScreenObject(int ObjectType, const char* sObjectId, POINT
 
 			GetPlugIn()->OpenPopupList(Area, "Target", 1);
 			GetPlugIn()->AddPopupListElement("Label Font Size", "", RIMCAS_OPEN_LIST);
-			GetPlugIn()->AddPopupListElement("Afterglow", "", RIMCAS_UPDATE_AFTERGLOW, false, int(Afterglow));
 			GetPlugIn()->AddPopupListElement("GRND Trail Dots", "", RIMCAS_OPEN_LIST);
 			GetPlugIn()->AddPopupListElement("APPR Trail Dots", "", RIMCAS_OPEN_LIST);
 			GetPlugIn()->AddPopupListElement("Predicted Track Line", "", RIMCAS_OPEN_LIST);
@@ -1707,15 +1690,6 @@ void CSMRRadar::OnFunctionCall(int FunctionId, const char* sItemString, POINT Pt
 		appWindowDisplays[id] = !appWindowDisplays[id];
 	}
 
-	if (FunctionId == BELUX_SETPROMODE)
-	{
-		belux_promode = !belux_promode;
-	}
-	if (FunctionId == BELUX_SETPROMODEEASY)
-	{
-		belux_promode_easy = !belux_promode_easy;
-	}
-
 	if (FunctionId == RIMCAS_ACTIVE_AIRPORT_FUNC)
 	{
 		setActiveAirport(sItemString);
@@ -1861,11 +1835,6 @@ void CSMRRadar::OnFunctionCall(int FunctionId, const char* sItemString, POINT Pt
 		RequestRefresh();
 	}
 
-	if (FunctionId == RIMCAS_UPDATE_AFTERGLOW)
-	{
-		Afterglow = !Afterglow;
-	}
-
 	if (FunctionId == RIMCAS_UPDATE_GND_TRAIL)
 	{
 		Trail_Gnd = atoi(sItemString);
@@ -1904,12 +1873,6 @@ void CSMRRadar::OnFunctionCall(int FunctionId, const char* sItemString, POINT Pt
 	{
 		ColorManager->update_brightness("label", std::atoi(sItemString));
 		ShowLists["Label"] = true;
-	}
-
-	if (FunctionId == RIMCAS_BRIGHTNESS_AFTERGLOW)
-	{
-		ColorManager->update_brightness("afterglow", std::atoi(sItemString));
-		ShowLists["Afterglow"] = true;
 	}
 
 	if (FunctionId == RIMCAS_BRIGHTNESS_SYMBOL)
@@ -2662,15 +2625,10 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 
 		POINT acPosPix = ConvertCoordFromPositionToPixel(RtPos.GetPosition());
 
-		if (Afterglow)
-		{
-			draw_after_glow(rt, graphics);
-		}
-
 
 		if (CurrentConfig->getActiveProfile()["targets"]["show_primary_target"].GetBool())
 		{
-			SolidBrush H_Brush(ColorManager->get_corrected_color("afterglow",
+			SolidBrush H_Brush(ColorManager->get_corrected_color("radartarget",
 			                                                     CConfig::getConfigColor(
 				                                                     CurrentConfig->getActiveProfile()["targets"][
 					                                                     "target_color"])));
@@ -3043,7 +3001,6 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 		GetPlugIn()->OpenPopupList(ListAreas["Brightness"], "Brightness", 1);
 		GetPlugIn()->AddPopupListElement("Label", "", RIMCAS_OPEN_LIST, false);
 		GetPlugIn()->AddPopupListElement("Symbol", "", RIMCAS_OPEN_LIST, false);
-		GetPlugIn()->AddPopupListElement("Afterglow", "", RIMCAS_OPEN_LIST, false);
 		GetPlugIn()->AddPopupListElement("Close", "", RIMCAS_CLOSE, false, 2, false, true);
 		ShowLists["Brightness"] = false;
 	}
@@ -3068,26 +3025,6 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 
 		GetPlugIn()->AddPopupListElement("Close", "", RIMCAS_CLOSE, false, 2, false, true);
 		ShowLists["Symbol"] = false;
-	}
-
-	if (ShowLists["Afterglow"])
-	{
-		GetPlugIn()->OpenPopupList(ListAreas["Afterglow"], "Afterglow Brightness", 1);
-		for (int i = CColorManager::bounds_low(); i <= CColorManager::bounds_high(); i += 10)
-			GetPlugIn()->AddPopupListElement(std::to_string(i).c_str(), "", RIMCAS_BRIGHTNESS_AFTERGLOW, false,
-			                                 int(bool(i == ColorManager->get_brightness("afterglow"))));
-
-		GetPlugIn()->AddPopupListElement("Close", "", RIMCAS_CLOSE, false, 2, false, true);
-		ShowLists["Afterglow"] = false;
-	}
-
-	if (ShowLists["Belux pro mode"])
-	{
-		GetPlugIn()->OpenPopupList(ListAreas["Belux pro mode"], "Belux pro mode", 1);
-		GetPlugIn()->AddPopupListElement("Enable", "", BELUX_SETPROMODE, false, int(belux_promode));
-		GetPlugIn()->AddPopupListElement("Easy mode", "", BELUX_SETPROMODEEASY, false, int(belux_promode_easy));
-		GetPlugIn()->AddPopupListElement("Close", "", RIMCAS_CLOSE, false, 2, false, true);
-		ShowLists["Belux pro mode"] = false;
 	}
 
 	Logger::info("QRD");
@@ -3357,85 +3294,6 @@ void CSMRRadar::manually_release(const char* system_id)
 	else
 	{
 		ReleasedTracks.erase(std::find(ReleasedTracks.begin(), ReleasedTracks.end(), system_id));
-	}
-}
-
-void CSMRRadar::draw_after_glow(CRadarTarget rt, Graphics& graphics)
-{
-	const auto ground_speed = rt.GetGS();
-
-	constexpr size_t afterglow_count = 3;
-
-	if (ground_speed <= 5) return;
-
-	const CRadarTargetPositionData current_position = rt.GetPosition();
-
-
-	// First, fill with historic positions
-	CRadarTargetPositionData historic_positions[afterglow_count];
-	CRadarTargetPositionData previous_position = current_position;
-	for (auto i = 0; i < afterglow_count; i++)
-	{
-		previous_position = rt.GetPreviousPosition(previous_position);
-		historic_positions[i] = previous_position;
-	}
-
-	// Reusable buffer
-	PointF pixel_points[PlaneShapeBuilder::shape_size];
-	// Render oldest afterglow first (requires signed math)
-	for (int i = afterglow_count - 1; i >= 0; --i)
-	{
-		std::string color_name;
-		switch (i)
-		{
-		case 0:
-			color_name = "history_one_color";
-			break;
-		case 1:
-			color_name = "history_two_color";
-			break;
-		default:
-			color_name = "history_three_color";
-			break;
-		}
-		const SolidBrush brush(ColorManager->get_corrected_color(
-			"afterglow",
-			CConfig::getConfigColor(CurrentConfig->getActiveProfile()["targets"][color_name.c_str()])
-		));
-
-		const auto pos = historic_positions[i];
-		const auto fp = rt.GetCorrelatedFlightPlan();
-
-		const auto id = UIHelper::id(rt);
-		auto scans = 0;
-		if (const auto found = aircraft_scans.find(id); found != aircraft_scans.end())
-		{
-			scans = found->second;
-		}
-
-		const auto shape = plane_shape_builder->build(pos, fp, {}, scans - i - 1);
-
-		// Convert CPositions to pixel positions
-		for (auto j = 0; j < shape.size(); ++j)
-		{
-			const auto pixel = ConvertCoordFromPositionToPixel(shape[j]);
-			pixel_points[j] = PointF{
-				static_cast<float>(pixel.x), static_cast<float>(pixel.y)
-			};
-		}
-		graphics.FillPolygon(&brush, pixel_points, shape.size());
-	}
-
-	const int TrailNumber = ground_speed > 50 ? Trail_App : Trail_Gnd;
-	CRadarTargetPositionData previousPos = rt.GetPreviousPosition(rt.GetPosition());
-	const SolidBrush trail_brush(ColorManager->get_corrected_color("symbol", Gdiplus::Color::White));
-	for (int j = 1; j <= TrailNumber; j++)
-	{
-		const POINT pCoord = ConvertCoordFromPositionToPixel(previousPos.GetPosition());
-
-		graphics.FillRectangle(&trail_brush, pCoord.x - 1, pCoord.y - 1, 2, 2);
-
-		previousPos = rt.GetPreviousPosition(previousPos);
 	}
 }
 

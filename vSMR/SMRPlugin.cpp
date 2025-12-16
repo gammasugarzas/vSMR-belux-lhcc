@@ -10,7 +10,7 @@ bool ConnectionMessage = false;
 std::string FailedToConnectMessage;
 
 string logonCode;
-string logonCallsign = "EGKK";
+string logonCallsign = "LHCC";
 
 bool BLINK = false;
 
@@ -362,8 +362,6 @@ CSMRPlugin::CSMRPlugin(void) :CPlugIn(EuroScopePlugIn::COMPATIBILITY_CODE, MY_PL
 	RegisterTagItemType("Datalink clearance", TAG_ITEM_DATALINK_STS);
 	RegisterTagItemFunction("Datalink menu", TAG_FUNC_DATALINK_MENU);
 
-	// I have no idea why the MIN started at a reandom offset, but let's just ignore that
-	//messageId = rand() % 10000 + 1789;
 	messageId = 0;
 
 	timer = clock();
