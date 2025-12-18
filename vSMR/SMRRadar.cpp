@@ -51,7 +51,7 @@ bool mouseWithin(const CRect& rect)
 void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool alt_mode)
 {
 	constexpr int mem_buffer_size = 200;
-	constexpr unsigned int border_width = 2;
+	constexpr unsigned int border_width = 1;
 	constexpr int border_growth = border_width + 1;
 
 	const std::string callsign = rt.GetCallsign();
@@ -150,8 +150,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		}
 	}
 
-	if (!AcisCorrelated &&
-		(belux_promode && belux_promode_easy))
+	if (!AcisCorrelated)
 	{
 		TagType = TagTypes::Uncorrelated;
 		ColorTagType = TagTypes::Uncorrelated;
@@ -262,77 +261,23 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	vector<PointF> border_points;
 	border_points.reserve(2 + 2 * LabelLines.size());
 
-	border_points.push_back(PointF{
-		static_cast<Gdiplus::REAL>(tag_start.x),
-		static_cast<Gdiplus::REAL>(tag_start.y)
-	});
-
-	int MaxTagWidth = 0;
-
 	for (unsigned int i = 0; i < LabelLines.size(); i++)
 	{
 		const auto line = LabelLines[i];
-		vector<string> lineStringArray;
-		int LineWidth = 0;
+		wstring lineString = L"";
+		string element_was = "";
+		float LineWidth = 0;
+		RectF measureRect = RectF(0, 0, 0, 0);
 
 		for (size_t el = 0; el < line.size(); ++el)
 		{
-			RectF mesureRect = RectF(0, 0, 0, 0);
-			const string element_was = line[el];
 			string element = line[el];
+			element_was = element;
 
 			for (auto& kv : TagReplacingMap)
 			{
 				replaceAll(element, kv.first, kv.second);
 			}
-
-			lineStringArray.push_back(element);
-
-			if (element == "" && line.size() == 1)
-			{
-				continue;
-			}
-
-			wstring wstr = wstring(element.begin(), element.end());
-			Gdiplus::Font* font = customFonts[currentFontSize];
-			if ((element_was == "SSR_CONFL" || i == 0  || (is_assr_err && show_err_lines && i == 1) || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
-			{
-				font = customFonts[currentFontSize + 10];
-			}
-
-			graphics.MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
-				font, PointF(0, 0), &string_format, &mesureRect);
-
-			LineWidth += mesureRect.Width;
-		}
-		MaxTagWidth = max(MaxTagWidth, LineWidth);
-	}
-
-	for (unsigned int i = 0; i < LabelLines.size(); i++)
-	{
-		const auto line = LabelLines[i];
-		vector<string> lineStringArray;
-
-		int TempTagWidth = 0;
-		int TempTagHeight = 0;
-
-		/*
-		 * Okay, breathe, I got you.
-		 * If we're left aligning, iterate forwards.
-		 * if right aligning, we iterate in the inverse order. Okay? Lovely
-		 */
-		for (size_t el = 0; el < line.size(); ++el)
-		{
-			RectF mesureRect = RectF(0, 0, 0, 0);
-			const string element_was = line[el];
-			string element = line[el];
-
-			for (auto& kv : TagReplacingMap)
-			{
-				replaceAll(element, kv.first, kv.second);
-			}
-
-			lineStringArray.push_back(element);
 
 			if (element == "" && line.size() == 1)
 			{
@@ -347,7 +292,138 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			}
 
 			graphics.MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
-			                       font, PointF(0, 0), &string_format, &mesureRect);
+				font, PointF(0, 0), &string_format, &measureRect);
+
+			lineString.append(wstr);
+			LineWidth += measureRect.Width;
+		}
+
+		volatile const string debustring(lineString.begin(), lineString.end());
+
+		TagWidth = max(TagWidth, ceil(LineWidth));
+		TagHeight += ceil(measureRect.GetBottom());
+	}
+
+	border_points.push_back(PointF{
+		static_cast<Gdiplus::REAL>(tag_start.x),
+		static_cast<Gdiplus::REAL>(tag_start.y)
+		});
+
+	border_points.push_back(PointF{
+		static_cast<Gdiplus::REAL>(tag_start.x + TagWidth),
+		static_cast<Gdiplus::REAL>(tag_start.y)
+		});
+
+	border_points.push_back(PointF{
+		static_cast<Gdiplus::REAL>(tag_start.x + TagWidth),
+		static_cast<Gdiplus::REAL>(tag_start.y + TagHeight)
+		});
+
+	border_points.push_back(PointF{
+		static_cast<Gdiplus::REAL>(tag_start.x),
+		static_cast<Gdiplus::REAL>(tag_start.y + TagHeight)
+		});
+
+
+	CRect TagBackgroundRect(tag_start.x, tag_start.y, TagWidth, TagHeight);
+
+
+	const auto angle_rad = DegToRad(TagAngles[id]);
+
+	// This needs to be ever so slightly further from the TagCenter,
+	// as to make the length var the distance between tag edge and PRS.
+	// Luckily, we know the angle between center and PRS and the tag dimensions,
+	// so some sin(alpha) = ((TagHeight/2)/llen) should help
+	const auto extension = min(
+		abs((TagHeight / 2) / sin(angle_rad)),
+		abs((TagWidth / 2) / cos(angle_rad))
+	);
+
+	POINT TagCenter;
+	int length = LeaderLineDefaultlenght;
+	if (TagLeaderLineLength.find(id) != TagLeaderLineLength.end())
+		length = TagLeaderLineLength[id];
+
+	length += extension;
+
+	TagCenter.x = long(acPosPix.x + float(length * cos(DegToRad(TagAngles[id]))));
+	TagCenter.y = long(acPosPix.y + float(length * sin(DegToRad(TagAngles[id]))));
+
+	const POINT tag_top_left = POINT{ TagCenter.x - (TagWidth / 2), TagCenter.y - (TagHeight / 2) };
+	const INT x1 = 0;
+
+	// Drawing the border if the mouse is over the tag
+	if (mouseWithin(
+		{ tag_top_left.x, tag_top_left.y, tag_top_left.x + TagWidth, tag_top_left.y + TagHeight }))
+	{
+		const bool is_rimcas_stage_two = RimcasInstance->getAlert(callsign) == CRimcas::StageTwo;
+		if (ColorTagType != TagTypes::Airborne)
+		{
+			Color border_color = is_assr_err
+				? is_asel
+				? Color::Orange
+				: Color::Red
+				: Color::White;
+
+			if (is_rimcas_stage_two)
+			{
+				border_color = Color(255, 0, 255);
+			}
+
+			SolidBrush borderbrush(border_color);
+
+			const auto grown_points = UIHelper::grow_border(border_points, border_growth, false);
+
+			Gdiplus::Pen pen(ColorManager->get_corrected_color("label", border_color), border_width);
+			pen.SetAlignment(Gdiplus::PenAlignmentInset);
+			//graphics.DrawPolygon(&pen, grown_points.data(), grown_points.size());
+			graphics.FillPolygon(&borderbrush, grown_points.data(),
+				static_cast<INT>(grown_points.size()));
+		}
+	}
+
+	SolidBrush otherbrush(TagBackgroundColor);
+	graphics.FillPolygon(&otherbrush, border_points.data(),
+		static_cast<INT>(border_points.size()));
+
+	int drawnHeight = 0;
+
+	for (unsigned int i = 0; i < LabelLines.size(); i++)
+	{
+		const auto line = LabelLines[i];
+		int drawnWidth = 0;
+		RectF measureRect = RectF(0, 0, 0, 0);
+		/*
+		 * Okay, breathe, I got you.
+		 * If we're left aligning, iterate forwards.
+		 * if right aligning, we iterate in the inverse order. Okay? Lovely
+		 */
+		for (size_t el = 0; el < line.size(); ++el)
+		{
+			const string element_was = line[el];
+			string element = line[el];
+			const auto draw_startx = tag_start.x + drawnWidth;
+			const auto draw_starty = tag_start.y + drawnHeight;
+
+			for (auto& kv : TagReplacingMap)
+			{
+				replaceAll(element, kv.first, kv.second);
+			}
+
+			if (element == "" && line.size() == 1)
+			{
+				continue;
+			}
+
+			wstring wstr = wstring(element.begin(), element.end());
+			Gdiplus::Font* font = customFonts[currentFontSize];
+			if ((element_was == "SSR_CONFL" || i == 0 || (is_assr_err && show_err_lines && i == 1) || element_was == "ALERT") && TagType != TagTypes::Uncorrelated)
+			{
+				font = customFonts[currentFontSize + 10];
+			}
+
+			graphics.MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
+			                       font, PointF(0, 0), &string_format, &measureRect);
 
 			// Setup text colors
 			const Brush* color = nullptr;
@@ -377,131 +453,96 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 				color = &FontColor;
 			}
 
-			// Drawing!
-			const auto draw_start = tag_start.x + TempTagWidth;
+			//*************************************** DRAW ***************************************//
+			bool refillBackground = false;
 
-			// Adjust background to RIMCAS color, if this row is ALERT
-			Color BackgroundColor = element == "ALERT"
-				                              ? RimcasInstance->GetAircraftColor(
-					                              rt.GetCallsign(), TagBackgroundColor, TagBackgroundColor,
-					                              CurrentConfig->getConfigColor(
-						                              CurrentConfig->getActiveProfile()["rimcas"][
-							                              "background_color_stage_one"]
-					                              ),
-					                              CurrentConfig->getConfigColor(
-						                              CurrentConfig->getActiveProfile()["rimcas"][
-							                              "background_color_stage_two"]
-					                              ))
-				                              : TagBackgroundColor;
+			// Find out the background color
+			Color BackgroundColor = TagBackgroundColor;
+			
+			if (element == "ALERT")
+			{
+				BackgroundColor = RimcasInstance->GetAircraftColor(
+					rt.GetCallsign(), TagBackgroundColor, TagBackgroundColor,
+					CurrentConfig->getConfigColor(
+						CurrentConfig->getActiveProfile()["rimcas"][
+							"background_color_stage_one"]
+					),
+					CurrentConfig->getConfigColor(
+						CurrentConfig->getActiveProfile()["rimcas"][
+							"background_color_stage_two"]
+					));
+				refillBackground = true;
+			}
 
 			if (is_heavy && (element_was == "wake"))
 			{
-				BackgroundColor = Color(247, 149, 211);
+				BackgroundColor = ColorManager
+					->get_corrected_color("label",
+						CurrentConfig->getConfigColor(
+							(*tdc.labels_settings)[UIHelper::getEnumString(
+								ColorTagType).c_str()]["background_color_heavy"]));
+				refillBackground = true;
 			}
 
 			if (element_was == "SSR_CONFL")
 			{
-				BackgroundColor = Color(242, 218, 24);
+				BackgroundColor = ColorManager
+				->get_corrected_color("label",
+					CurrentConfig->getConfigColor(
+						(*tdc.labels_settings)[UIHelper::getEnumString(
+							ColorTagType).c_str()]["background_color_alert"]));
+				refillBackground = true;
 			}
 
 			if (element_was == "eobt")
 			{
-				BackgroundColor = Color(0, 105, 165);
+				BackgroundColor = ColorManager
+					->get_corrected_color("label",
+						CurrentConfig->getConfigColor(
+							(*tdc.labels_settings)[UIHelper::getEnumString(
+								ColorTagType).c_str()]["background_color_eobt"]));
+				refillBackground = true;
 			}
 
 			const SolidBrush backgroundBrush(BackgroundColor);
 
-			RectF layoutRect(draw_start,
-				static_cast<Gdiplus::REAL>(tag_start.y + TagHeight),
-				mesureRect.Width,
-				mesureRect.Height);
-			// If we're not looking at the last element
-
-
-			if (el != line.size() - 1)
+			// Refill the background of the actual text if needed
+			if (refillBackground)
 			{
-				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
-					static_cast<int>(mesureRect.Width),
-					static_cast<int>(mesureRect.Height));
-			}
-			else
-			{
-				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_start), tag_start.y + TagHeight,
-					static_cast<int>(MaxTagWidth- static_cast<long>(draw_start)),
-					static_cast<int>(mesureRect.Height));
+				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_startx), draw_starty,
+					static_cast<int>(measureRect.Width),
+					static_cast<int>(measureRect.Height));
 			}
 
+			drawnWidth += static_cast<int>(measureRect.GetRight());
 
-			if (element_was == "SSR_CONFL")
+			measureRect.Offset(draw_startx, draw_starty);
+			// Finally draw the string
+			if ((element_was == "SSR_CONFL") || (is_heavy && (element_was == "wake")))
 			{
-				const SolidBrush blackStringBrush(Color(0, 0, 0));
-				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &string_format,
+				const SolidBrush blackStringBrush(Color::Black);
+				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, measureRect, &string_format,
 					&blackStringBrush);
 			}
 			else
 			{
-				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, layoutRect, &string_format,
+				graphics.DrawString(wstr.c_str(), wcslen(wstr.c_str()), font, measureRect, &string_format,
 					color);
 			}
 
-			CRect ItemRect(floor(layoutRect.GetLeft()), floor(layoutRect.GetTop()),
-			               floor(layoutRect.GetRight()),
-			               floor(layoutRect.GetBottom()));
+			CRect ItemRect(floor(measureRect.GetLeft()), floor(measureRect.GetTop()),
+			               floor(measureRect.GetRight()),
+			               floor(measureRect.GetBottom()));
 			interactables.push_back({TagClickableMap[element], ItemRect});
-
-			if (el != line.size() - 1)
-			{
-				TempTagWidth += static_cast<int>(mesureRect.GetRight());
-			}
-			else
-			{
-				layoutRect.Width = MaxTagWidth - static_cast<long>(draw_start);
-				TempTagWidth += MaxTagWidth - mesureRect.GetLeft();
-			}
-
-			TempTagHeight = max(TempTagHeight, static_cast<int>(mesureRect.GetBottom()));
 		}
-
-
-		TagWidth =  max(TagWidth, TempTagWidth);
-		TagHeight += TempTagHeight;
+		drawnHeight = static_cast<int>(measureRect.GetBottom());
 	}
 
-	TagWidth = MaxTagWidth;
-
-
-	CRect TagBackgroundRect(tag_start.x, tag_start.y, tag_start.x + TagWidth,
-	                        tag_start.y + TagHeight);
-
-
-	const auto angle_rad = DegToRad(TagAngles[id]);
-
-	// This needs to be ever so slightly further from the TagCenter,
-	// as to make the length var the distance between tag edge and PRS.
-	// Luckily, we know the angle between center and PRS and the tag dimensions,
-	// so some sin(alpha) = ((TagHeight/2)/llen) should help
-	const auto extension = min(
-		abs((TagHeight / 2) / sin(angle_rad)),
-		abs((TagWidth / 2) / cos(angle_rad))
-	);
-
-	POINT TagCenter;
-	int length = LeaderLineDefaultlenght;
-	if (TagLeaderLineLength.find(id) != TagLeaderLineLength.end())
-		length = TagLeaderLineLength[id];
-
-	length += extension;
-
-	TagCenter.x = long(acPosPix.x + float(length * cos(DegToRad(TagAngles[id]))));
-	TagCenter.y = long(acPosPix.y + float(length * sin(DegToRad(TagAngles[id]))));
-
-	const POINT tag_top_left = POINT{TagCenter.x - (TagWidth / 2), TagCenter.y - (TagHeight / 2)};
-	const INT x1 = 0;
 
 	// Drawing the symbol to tag line to actual screen, then blit the actual tag
 	const PointF acPosF = PointF(static_cast<Gdiplus::REAL>(acPosPix.x), static_cast<Gdiplus::REAL>(acPosPix.y));
-	const Pen leaderLinePen = Pen(ColorManager->get_corrected_color("label", dimming, Color::White));
-	vector<PointF> transformed_border_points(border_points.size());
+	const Pen leaderLinePen = Pen(ColorManager->get_corrected_color("label", dimming, Color::White),2.0);
+	vector<PointF> transformed_border_points;
 	for (auto border_point : border_points)
 	{
 		border_point.X += tag_top_left.x - x1;
@@ -513,6 +554,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	UIHelper::drawLeaderLine(transformed_border_points, acPosF, &leaderLinePen, tdc.graphics);
 
 
+
 	// Blit to screen without copying
 	tdc.graphics->DrawImage(&mem_buffer,
 	                        static_cast<INT>(tag_top_left.x), static_cast<INT>(tag_top_left.y), x1, 0,
@@ -521,7 +563,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 	);
 
 	// Adding the tag screen object
-	TagBackgroundRect.MoveToXY(tag_top_left.x + border_growth, tag_top_left.y + border_growth);
+	TagBackgroundRect.MoveToXY(tag_top_left.x - border_growth, tag_top_left.y - border_growth);
 	TagBackgroundRect.right += border_growth;
 
 	const auto bottom_line = GetBottomLine(rt.GetCallsign());
@@ -691,7 +733,7 @@ CSMRRadar::CSMRRadar()
 		ColorManager = new CColorManager();
 
 	standardCursor = true;
-	ActiveAirport = "EGKK";
+	ActiveAirport = "LHBP";
 
 	// Setting up the data for the 2 approach windows
 	appWindowDisplays[1] = false;
@@ -2749,15 +2791,15 @@ void CSMRRadar::OnRefresh(HDC hDC, int Phase)
 	graphics.SetSmoothingMode(SmoothingModeDefault);
 
 #pragma region tags
-	RectF mesureRect;
-	mesureRect = RectF(0, 0, 0, 0);
+	RectF measureRect;
+	measureRect = RectF(0, 0, 0, 0);
 	const auto string_format = Gdiplus::StringFormat();
 
 	graphics.MeasureString(L"AZERTYUIOPQSDFGHJKLMWXCVBN0", wcslen(L"AZERTYUIOPQSDFGHJKLMWXCVBN0"),
-	                       customFonts[currentFontSize], PointF(0, 0), &string_format, &mesureRect);
-	int oneLineHeight = (int)mesureRect.GetBottom();
+	                       customFonts[currentFontSize], PointF(0, 0), &string_format, &measureRect);
+	int oneLineHeight = (int)measureRect.GetBottom();
 	graphics.MeasureString(L"AZERTYUIOPQSDFGHJKLMWXCVBN0", wcslen(L"AZERTYUIOPQSDFGHJKLMWXCVBN0"),
-	                       customFonts[currentFontSize + 10], PointF(0, 0), &string_format, &mesureRect);
+	                       customFonts[currentFontSize + 10], PointF(0, 0), &string_format, &measureRect);
 
 	// Drawing the Tags
 	auto tdc = TagDrawingContext{

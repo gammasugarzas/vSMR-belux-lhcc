@@ -162,7 +162,7 @@ public:
 	pair<string, string> ActiveDistance;
 
 
-	string ActiveAirport = "EGKK";
+	string ActiveAirport = "LHBP";
 
 	inline string getActiveAirport() {
 		return ActiveAirport;

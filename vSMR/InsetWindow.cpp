@@ -452,14 +452,14 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 		// First we need to figure out the tag size
 
 		int TagWidth = 0, TagHeight = 0;
-		RectF mesureRect;
-		gdi->MeasureString(L" ", wcslen(L" "), radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &mesureRect);
-		int blankWidth = (int)mesureRect.GetRight();
+		RectF measureRect;
+		gdi->MeasureString(L" ", wcslen(L" "), radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &measureRect);
+		int blankWidth = (int)measureRect.GetRight();
 
-		mesureRect = RectF(0, 0, 0, 0);
+		measureRect = RectF(0, 0, 0, 0);
 		gdi->MeasureString(L"AZERTYUIOPQSDFGHJKLMWXCVBN", wcslen(L"AZERTYUIOPQSDFGHJKLMWXCVBN"),
-			radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &mesureRect);
-		int oneLineHeight = (int)mesureRect.GetBottom();
+			radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &measureRect);
+		int oneLineHeight = (int)measureRect.GetBottom();
 
 		const Value& LabelsSettings = radar_screen->CurrentConfig->getActiveProfile()["labels"];
 		const Value& LabelLines = LabelsSettings[Utils::getEnumString(TagType).c_str()]["definition"];
@@ -481,7 +481,7 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 
 			for (unsigned int j = 0; j < line.Size(); j++)
 			{
-				mesureRect = RectF(0, 0, 0, 0);
+				measureRect = RectF(0, 0, 0, 0);
 				string element = line[j].GetString();
 
 				for (auto& kv : TagReplacingMap)
@@ -491,9 +491,9 @@ void CInsetWindow::render(HDC hDC, CSMRRadar* radar_screen, Graphics* gdi, POINT
 
 				wstring wstr = wstring(element.begin(), element.end());
 				gdi->MeasureString(wstr.c_str(), wcslen(wstr.c_str()),
-					radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &mesureRect);
+					radar_screen->customFonts[radar_screen->currentFontSize], PointF(0, 0), &string_format, &measureRect);
 
-				TempTagWidth += (int)mesureRect.GetRight();
+				TempTagWidth += (int)measureRect.GetRight();
 
 				if (j != line.Size() - 1)
 					TempTagWidth += (int)blankWidth;
