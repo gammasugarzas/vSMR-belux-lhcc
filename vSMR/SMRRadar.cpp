@@ -388,6 +388,8 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 
 	int drawnHeight = 0;
 
+	int draw_startx, draw_starty;
+
 	for (unsigned int i = 0; i < LabelLines.size(); i++)
 	{
 		const auto line = LabelLines[i];
@@ -402,8 +404,16 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 		{
 			const string element_was = line[el];
 			string element = line[el];
-			const auto draw_startx = tag_start.x + drawnWidth;
-			const auto draw_starty = tag_start.y + drawnHeight;
+			if (i == 0)
+			{
+				draw_startx = tag_start.x + drawnWidth;
+				draw_starty = tag_start.y + drawnHeight;
+			}
+			else
+			{
+				draw_startx = drawnWidth;
+				draw_starty = drawnHeight;
+			}
 
 			for (auto& kv : TagReplacingMap)
 			{
@@ -509,9 +519,18 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			// Refill the background of the actual text if needed
 			if (refillBackground)
 			{
-				graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_startx), draw_starty,
-					static_cast<int>(measureRect.Width),
-					static_cast<int>(measureRect.Height));
+				if ((element == "ALERT") || (element_was == "SSR_CONFL"))
+				{
+					graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_startx), draw_starty,
+						static_cast<int>(TagWidth),
+						static_cast<int>(floor(measureRect.Height)));
+				}
+				else
+				{
+					graphics.FillRectangle(&backgroundBrush, static_cast<long>(draw_startx), draw_starty,
+						static_cast<int>(floor(measureRect.Width)),
+						static_cast<int>(floor(measureRect.Height)));
+				}
 			}
 
 			drawnWidth += static_cast<int>(measureRect.GetRight());
@@ -535,7 +554,7 @@ void CSMRRadar::draw_target(TagDrawingContext& tdc, CRadarTarget& rt, const bool
 			               floor(measureRect.GetBottom()));
 			interactables.push_back({TagClickableMap[element], ItemRect});
 		}
-		drawnHeight = static_cast<int>(measureRect.GetBottom());
+		drawnHeight = ceil(measureRect.GetBottom());
 	}
 
 
